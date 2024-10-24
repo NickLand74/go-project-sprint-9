@@ -8,12 +8,16 @@ import (
 	"time"
 )
 
-// Generator генерирует последовательность чисел 1, 2, 3 и т.д. и
-// отправляет их в канал ch. При этом после записи в канал для каждого числа
-// вызывается функция fn. Она служит для подсчёта количества и суммы
-// сгенерированных чисел.
 func Generator(ctx context.Context, ch chan<- int64, fn func(int64)) {
-	defer close(ch) // Закрываем канал по завершении работы
+	// Добавим флаг для контроля закрытия канала
+	closed := false
+	defer func() {
+		if !closed {
+			close(ch) // Закрываем канал только если он не был закрыт
+			closed = true
+		}
+	}()
+
 	for i := int64(1); ; i++ {
 		select {
 		case <-ctx.Done():
@@ -35,7 +39,7 @@ func Worker(in <-chan int64, out chan<- int64) {
 func main() {
 	chIn := make(chan int64)
 
-	// 3. Создание контекста с таймаутом
+	// Создание контекста с таймаутом
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -50,7 +54,6 @@ func main() {
 	})
 
 	const NumOut = 5 // количество обрабатывающих горутин и каналов
-	// outs — слайс каналов, куда будут записываться числа из chIn
 	outs := make([]chan int64, NumOut)
 	for i := 0; i < NumOut; i++ {
 		outs[i] = make(chan int64)
@@ -64,7 +67,7 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	// 4. Собираем числа из каналов outs
+	// Собираем числа из каналов outs
 	for i := 0; i < NumOut; i++ {
 		wg.Add(1)
 		go func(i int) {
@@ -76,6 +79,7 @@ func main() {
 		}(i)
 	}
 
+	// горутина для закрытия chOut после завершения всех работников
 	go func() {
 		wg.Wait()
 		close(chOut)
@@ -93,7 +97,7 @@ func main() {
 	fmt.Println("Сумма чисел", inputSum, sum)
 	fmt.Println("Разбивка по каналам", amounts)
 
-	// проверка результатов
+	// Проверка результатов
 	if inputSum != sum {
 		log.Fatalf("Ошибка: суммы чисел не равны: %d != %d\n", inputSum, sum)
 	}
